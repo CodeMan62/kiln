@@ -118,6 +118,14 @@ static constexpr std::array asm_lang_vars = {
     "CMAKE_ASM_COMPILER",    "CMAKE_ASM_COMPILER_ID",   "CMAKE_ASM_COMPILER_VERSION",     "CMAKE_ASM_FLAGS",
     "CMAKE_ASM_FLAGS_DEBUG", "CMAKE_ASM_FLAGS_RELEASE", "CMAKE_ASM_FLAGS_RELWITHDEBINFO", "CMAKE_ASM_FLAGS_MINSIZEREL",
 };
+static constexpr std::array cuda_lang_vars = {
+    "CMAKE_CUDA_COMPILER",
+    "CMAKE_CUDA_COMPILER_ID",
+    "CMAKE_CUDA_COMPILER_VERSION",
+    "CMAKE_CUDA_IMPLICIT_INCLUDE_DIRECTORIES",
+    "CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES",
+    "CMAKE_CUDA_IMPLICIT_LINK_LIBRARIES",
+};
 
 // Build a cache key for a compiler binary: "<binary>:<realpath>:<mtime>:<sysroot>:<target>"
 // Cheap to compute (no subprocesses), changes when binary is updated or swapped via
@@ -317,9 +325,9 @@ std::string Interpreter::enable_compiler_for_language(const std::string& lang) {
     std::string loaded_var = "CMAKE_" + lang + "_COMPILER_LOADED";
     if (!get_variable(loaded_var).empty()) return {}; // Already loaded
 
-    if (lang == "C" || lang == "CXX") {
-        const Language lang_enum = (lang == "C") ? Language::C : Language::CXX;
-        const std::string default_binary = (lang == "C") ? "gcc" : "g++";
+    if (lang == "C" || lang == "CXX" || lang == "CUDA") {
+        const Language lang_enum = (lang == "C") ? Language::C : (lang == "CUDA") ? Language::CUDA : Language::CXX;
+        const std::string default_binary = (lang == "C") ? "gcc" : (lang == "CUDA") ? "nvcc" : "g++";
 
         // Resolve effective compiler and target options from current scope.
         // User-supplied values (toolchain file, -D, set() in CMakeLists)
@@ -388,6 +396,8 @@ std::string Interpreter::enable_compiler_for_language(const std::string& lang) {
             };
             if (lang == "C")
                 apply_backup(c_lang_vars);
+            else if (lang == "CUDA")
+                apply_backup(cuda_lang_vars);
             else
                 apply_backup(cxx_lang_vars);
             detected_id = get_variable("CMAKE_" + lang + "_COMPILER_ID");
@@ -406,7 +416,7 @@ std::string Interpreter::enable_compiler_for_language(const std::string& lang) {
         if (on_demand_info) { populate_lang_vars(*this, lang, effective_binary, *on_demand_info, *compiler); }
 
         const std::string id = get_variable("CMAKE_" + lang + "_COMPILER_ID");
-        if (id == "GNU" || id == "Clang") { set_variable("CMAKE_" + lang + "_VERBOSE_FLAG", "-v"); }
+        if (id == "GNU" || id == "Clang" || id == "NVCC") { set_variable("CMAKE_" + lang + "_VERBOSE_FLAG", "-v"); }
         if (id == "GNU") { set_variable(lang == "C" ? "CMAKE_COMPILER_IS_GNUCC" : "CMAKE_COMPILER_IS_GNUCXX", "1"); }
 
         // Populate the prereq vars that CMake's Compiler/<id>-<lang>.cmake
@@ -439,6 +449,9 @@ std::string Interpreter::enable_compiler_for_language(const std::string& lang) {
         } else if ((id == "GNU" || id == "Clang") && lang == "C") {
             set_variable("CMAKE_C_STANDARD_COMPUTED_DEFAULT", "11");
             set_variable("CMAKE_C_EXTENSIONS_COMPUTED_DEFAULT", "ON");
+        } else if ((id == "nvcc" || id == "Cuda") && lang == "CUDA"){
+            set_variable("CMAKE_CUDA_STANDARD_COMPUTED_DEFAULT", "12.0");
+            set_variable("CMAKE_CUDA_EXTENSIONS_COMPUTED_DEFAULT", "ON");
         }
 
         // Default path: include CMake's upstream Compiler/<id>-<lang>.cmake so
@@ -461,6 +474,16 @@ std::string Interpreter::enable_compiler_for_language(const std::string& lang) {
                 set_variable("_CMAKE_" + lang + "_PIE_MAY_BE_SUPPORTED_BY_LINKER", "YES");
                 set_variable(p + "COMPILE_OPTIONS_VISIBILITY", "-fvisibility=");
                 set_variable(p + "COMPILE_OPTIONS_VISIBILITY_INLINES_HIDDEN", "-fvisibility-inlines-hidden");
+            } else if (id == "NVCC") {
+                const std::string p = "CMAKE_" + lang + "_";
+                set_variable(p + "COMPILE_OPTIONS_PIC", "-Xcompiler=-fPIC");
+                set_variable(p + "COMPILE_OPTIONS_PIE", "-Xcompiler=-fPIE");
+                set_variable(p + "LINK_OPTIONS_PIE", "-Xcompiler=-fPIE;-pie");
+                set_variable(p + "LINK_OPTIONS_NO_PIE", "-no-pie");
+                set_variable("_CMAKE_" + lang + "_PIE_MAY_BE_SUPPORTED_BY_LINKER", "YES");
+                set_variable(p + "COMPILE_OPTIONS_VISIBILITY", "-Xcompiler=-fvisibility=");
+                set_variable(p + "COMPILE_OPTIONS_VISIBILITY_INLINES_HIDDEN", "-Xcompiler=-fvisibility-inlines-hidden");
+                set_variable(p + "ARCHITECTURES", "70;75;80;86");
             }
         } else if (id == "GNU" || id == "Clang") {
             std::string module = "Compiler/" + id + "-" + lang;
@@ -548,7 +571,7 @@ std::string Interpreter::enable_compiler_for_language(const std::string& lang) {
         compiler->set_version(get_variable("CMAKE_ASM_COMPILER_VERSION"));
         get_toolchain().set_compiler(Language::ASM, std::move(compiler));
     } else {
-        return "unsupported language: " + lang + " (only C, CXX, and ASM are supported)";
+        return "unsupported language: " + lang + " (only C, CXX, CUDA, and ASM are supported)";
     }
 
     // Seed CMAKE_<LANG>_FLAGS / per-config flags from *_INIT, mirroring CMake.
