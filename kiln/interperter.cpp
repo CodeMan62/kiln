@@ -169,8 +169,14 @@ PlatformInfo detect_compiler_for(CacheStore& cache, const std::string& binary, L
                                  const std::string& compiler_target) {
     std::string key = make_compiler_cache_key(binary, sysroot, compiler_target);
     if (auto hit = try_cached_compiler_detection(cache, binary, key)) { return *hit; }
-    GnuCompiler probe(binary, lang, sysroot, compiler_target);
-    PlatformInfo info = probe.detect_platform();
+    // Dispatch CUDA/NVCC to NvccCompiler; everything else to GnuCompiler.
+    std::unique_ptr<Compiler> probe;
+    if (lang == Language::CUDA) {
+        probe = std::make_unique<NvccCompiler>(binary, lang, sysroot, compiler_target);
+    } else {
+        probe = std::make_unique<GnuCompiler>(binary, lang, sysroot, compiler_target);
+    }
+    PlatformInfo info = probe->detect_platform();
     CompilerDetectionCacheEntry entry;
     entry.info = info;
     entry.version_output = detail::run_command(binary + " --version 2>&1");
@@ -192,6 +198,8 @@ void apply_standard_options(Interpreter& interp, const std::string& lang, const 
         for (int s : {90, 99, 11, 17, 23}) set_for("C", Language::C, s);
     } else if (lang == "CXX") {
         for (int s : {98, 11, 14, 17, 20, 23}) set_for("CXX", Language::CXX, s);
+    } else if (lang == "CUDA") {
+        for (int s : {3, 11, 14, 17, 20, 23}) set_for("CUDA", Language::CUDA, s);
     }
 }
 
@@ -309,6 +317,20 @@ void fake_cmake_compiler_checks_and_init(Interpreter& interp, CacheStore& cache)
         backup_vars_set("CMAKE_SIZEOF_VOID_P", cxx_info.sizeof_void_p);
         backup_vars_set("CMAKE_HOST_SYSTEM_NAME", cxx_info.system_name);
         backup_vars_set("CMAKE_HOST_SYSTEM_PROCESSOR", cxx_info.system_processor);
+
+        // Cache CUDA data if nvcc is available on the system
+        std::string nvcc_version_output = detail::run_command("nvcc --version 2>&1");
+        if (!nvcc_version_output.empty() && nvcc_version_output.find("Cuda compilation tools") != std::string::npos) {
+            std::string cuda_version;
+            auto vpos = nvcc_version_output.rfind('V');
+            if (vpos != std::string::npos) {
+                auto end = nvcc_version_output.find_first_not_of("0123456789.", vpos + 1);
+                cuda_version = nvcc_version_output.substr(vpos + 1, end - vpos - 1);
+            }
+            backup_vars_set("CMAKE_CUDA_COMPILER", "nvcc");
+            backup_vars_set("CMAKE_CUDA_COMPILER_ID", "NVCC");
+            backup_vars_set("CMAKE_CUDA_COMPILER_VERSION", cuda_version);
+        }
     });
 
     // Per-Interpreter: copy system-level vars out of the populated cache.
@@ -415,6 +437,18 @@ std::string Interpreter::enable_compiler_for_language(const std::string& lang) {
 
         if (on_demand_info) { populate_lang_vars(*this, lang, effective_binary, *on_demand_info, *compiler); }
 
+        // GnuCompiler detection doesn't understand NVCC. Detect and force
+        // NVCC compiler ID when the binary is nvcc and detection failed.
+        if (lang == "CUDA") {
+            std::string current_id = get_variable("CMAKE_" + lang + "_COMPILER_ID");
+            if (current_id != "NVCC" && current_id != "nvcc" && current_id != "Cuda"
+                && effective_binary.find("nvcc") != std::string::npos) {
+                set_variable("CMAKE_" + lang + "_COMPILER_ID", "NVCC");
+                // Reconstruct compiler with corrected NVCC ID
+                compiler = make_compiler("NVCC", effective_binary, lang_enum, sysroot, compile_target_effective);
+            }
+        }
+
         const std::string id = get_variable("CMAKE_" + lang + "_COMPILER_ID");
         if (id == "GNU" || id == "Clang" || id == "NVCC") { set_variable("CMAKE_" + lang + "_VERBOSE_FLAG", "-v"); }
         if (id == "GNU") { set_variable(lang == "C" ? "CMAKE_COMPILER_IS_GNUCC" : "CMAKE_COMPILER_IS_GNUCXX", "1"); }
@@ -449,8 +483,8 @@ std::string Interpreter::enable_compiler_for_language(const std::string& lang) {
         } else if ((id == "GNU" || id == "Clang") && lang == "C") {
             set_variable("CMAKE_C_STANDARD_COMPUTED_DEFAULT", "11");
             set_variable("CMAKE_C_EXTENSIONS_COMPUTED_DEFAULT", "ON");
-        } else if ((id == "nvcc" || id == "Cuda") && lang == "CUDA"){
-            set_variable("CMAKE_CUDA_STANDARD_COMPUTED_DEFAULT", "12.0");
+        } else if ((id == "NVCC" || id == "nvcc" || id == "Cuda") && lang == "CUDA"){
+            set_variable("CMAKE_CUDA_STANDARD_COMPUTED_DEFAULT", "17");
             set_variable("CMAKE_CUDA_EXTENSIONS_COMPUTED_DEFAULT", "ON");
         }
 
@@ -485,7 +519,7 @@ std::string Interpreter::enable_compiler_for_language(const std::string& lang) {
                 set_variable(p + "COMPILE_OPTIONS_VISIBILITY_INLINES_HIDDEN", "-Xcompiler=-fvisibility-inlines-hidden");
                 set_variable(p + "ARCHITECTURES", "70;75;80;86");
             }
-        } else if (id == "GNU" || id == "Clang") {
+        } else if (id == "GNU" || id == "Clang" || id == "NVCC") {
             std::string module = "Compiler/" + id + "-" + lang;
             std::string include_arg = module;
             // include() with a bare module name searches CMAKE_MODULE_PATH and
