@@ -842,7 +842,7 @@ std::expected<std::string, std::string> GenexEvaluator::evaluate_node(const Gene
             compiler_id = ctx_.c_compiler_id;
         } else if (current_lang == "CXX") {
             compiler_id = ctx_.cxx_compiler_id;
-        } else if (current_lang == "CUDA"){
+        } else if (current_lang == "CUDA") {
             compiler_id = ctx_.cuda_compiler_id;
         } else {
             // For other languages, we don't have compiler ID in context yet

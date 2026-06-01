@@ -1249,7 +1249,7 @@ Target::generate_object_tasks(GraphTransaction& txn, const Toolchain& toolchain,
     auto effective_standard = [&](Language lang) -> std::string {
         if (lang == Language::ASM) return "";
         int required = (lang == Language::CXX) ? cxx_required_std : (lang == Language::CUDA) ? cuda_required_std : c_required_std;
-        int compiler_default = (lang == Language::CXX) ? cxx_default_std : (lang == Language::CUDA) ? cuda_default_std: c_default_std;
+        int compiler_default = (lang == Language::CXX) ? cxx_default_std : (lang == Language::CUDA) ? cuda_default_std : c_default_std;
         return compute_effective_standard(get_language_standard(lang), required, compiler_default);
     };
 
@@ -2311,7 +2311,9 @@ std::expected<void, std::string> Target::generate_tasks(GraphTransaction& txn, c
             int required_std = 0;
             const auto& cf = get_resolved_property("COMPILE_FEATURES");
             if (!cf.empty()) { required_std = CompileFeatures::instance().get_required_standard(cf, linker_lang); }
-            int compiler_default = (linker_lang == Language::CXX) ? cxx_default_std : (linker_lang == Language::CUDA) ? cuda_default_std : c_default_std;
+            int compiler_default = (linker_lang == Language::CXX)    ? cxx_default_std
+                                   : (linker_lang == Language::CUDA) ? cuda_default_std
+                                                                     : c_default_std;
             ctx.standard = compute_effective_standard(get_language_standard(linker_lang), required_std, compiler_default);
         }
         ctx.extensions_enabled = get_language_extensions(linker_lang);
@@ -2356,8 +2358,9 @@ std::expected<void, std::string> Target::generate_tasks(GraphTransaction& txn, c
         for (const auto& dir : get_resolved_property("LINK_DIRECTORIES")) { ctx.lib_dirs.push_back(dir); }
 
         {
-            const char* implicit_var =
-                (linker_lang == Language::C) ? "CMAKE_C_IMPLICIT_LINK_DIRECTORIES" : (linker_lang == Language::CUDA) ? "CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES" : "CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES";
+            const char* implicit_var = (linker_lang == Language::C)      ? "CMAKE_C_IMPLICIT_LINK_DIRECTORIES"
+                                       : (linker_lang == Language::CUDA) ? "CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES"
+                                                                         : "CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES";
             for (const auto& dir : CMakeArray(interp.get_variable(implicit_var))) { ctx.implicit_link_dirs.push_back(dir); }
         }
 

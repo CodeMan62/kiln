@@ -1396,7 +1396,6 @@ inline bool compiler_honors_target_flag(std::string_view id) {
     return id == "Clang" || id == "AppleClang" || id == "IntelLLVM" || id == "ARMClang";
 }
 
-
 } // namespace kiln
 
 #include "nvcc_compiler.hpp"

@@ -83,12 +83,8 @@ public:
     }
 
     std::string std_compile_option(Language lang, int standard) const override {
-        if (lang == Language::CXX || lang == Language::CUDA) {
-            return "-std=c++" + std::to_string(standard);
-        }
-        if (lang == Language::C) {
-            return "-std=c" + std::to_string(standard);
-        }
+        if (lang == Language::CXX || lang == Language::CUDA) { return "-std=c++" + std::to_string(standard); }
+        if (lang == Language::C) { return "-std=c" + std::to_string(standard); }
         return {};
     }
 

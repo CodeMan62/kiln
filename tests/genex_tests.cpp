@@ -1696,7 +1696,7 @@ TEST_CASE("GenexEvaluator - monkey test", "[genex][evaluator][monkey]") {
     REQUIRE(leaks == 0);
 }
 
-// cuda tests 
+// cuda tests
 TEST_CASE("GenexEvaluator - COMPILE_LANGUAGE:CUDA", "[genex][evaluator][cuda]") {
     GenexEvaluationContext ctx;
     ctx.compile_language = Language::CUDA;

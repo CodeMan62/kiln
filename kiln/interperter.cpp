@@ -483,7 +483,7 @@ std::string Interpreter::enable_compiler_for_language(const std::string& lang) {
         } else if ((id == "GNU" || id == "Clang") && lang == "C") {
             set_variable("CMAKE_C_STANDARD_COMPUTED_DEFAULT", "11");
             set_variable("CMAKE_C_EXTENSIONS_COMPUTED_DEFAULT", "ON");
-        } else if ((id == "NVCC" || id == "nvcc" || id == "Cuda") && lang == "CUDA"){
+        } else if ((id == "NVCC" || id == "nvcc" || id == "Cuda") && lang == "CUDA") {
             set_variable("CMAKE_CUDA_STANDARD_COMPUTED_DEFAULT", "17");
             set_variable("CMAKE_CUDA_EXTENSIONS_COMPUTED_DEFAULT", "ON");
         }
